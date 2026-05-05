@@ -47,13 +47,14 @@
         button:active { background: #005fc1; transform: scale(0.98); }
         .btn-delete { background: #ff3b30; }
         .btn-edit { background: #ff9500; }
-        .btn-export { background: #34c759; }
-        .calc-button { background: #34c759; margin-top: 8px; }
+        .calc-button { background: #34c759; }
+        .sync-button { background: #007aff; }
         .result-block {
             background: #eef2ff;
             border-radius: 20px;
             padding: 16px;
             text-align: center;
+            margin-top: 16px;
         }
         .result-value { font-size: 28px; font-weight: 700; color: #1a1a1a; }
         table {
@@ -69,6 +70,7 @@
         th { background: #f8f8f8; font-weight: 600; }
         .filter-row { display: flex; gap: 8px; margin-bottom: 16px; }
         .filter-row select, .filter-row input { flex: 1; margin-bottom: 0; }
+        .filter-row button { margin-bottom: 0; }
         .list-filters {
             background: #f8f8f8;
             border-radius: 16px;
@@ -125,9 +127,10 @@
         }
         .modal-buttons { display: flex; gap: 8px; margin-top: 16px; }
         .modal-buttons button { margin-bottom: 0; }
-        .import-file { display: none; }
         .action-buttons { display: flex; gap: 8px; }
         .action-buttons button { padding: 6px 12px; font-size: 12px; margin-bottom: 0; width: auto; }
+        .sync-status { font-size: 12px; color: #666; margin-top: 8px; text-align: center; }
+        .syncing { opacity: 0.5; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -141,7 +144,12 @@
         <input type="date" id="endDate">
         <label>👤 Сотрудник</label>
         <select id="employeeFilter"><option value="">Все сотрудники</option></select>
-        <button id="calculateBtn" class="calc-button">📊 РАССЧИТАТЬ</button>
+
+        <div class="filter-row">
+            <button id="calculateBtn" class="calc-button">📊 РАССЧИТАТЬ</button>
+            <button id="syncBtn" class="sync-button">☁️ СИНХРОНИЗИРОВАТЬ</button>
+        </div>
+        <div id="syncStatus" class="sync-status"></div>
 
         <div class="result-block">
             <div>💰 Итого выплат:</div>
@@ -194,13 +202,7 @@
                         <option value="asc">📅 Сначала старые</option>
                     </select>
                 </div>
-                <button id="applyListFilterBtn" style="margin-bottom: 8px;">📋 Применить к списку</button>
-                <div class="filter-row" style="margin-top: 8px;">
-                    <button id="syncBtn" class="btn-export">☁️ Синхронизировать</button>
-                    <button id="exportBtn" class="btn-export">💾 Экспорт</button>
-                    <button id="importBtn" style="background:#ff9500;">📂 Импорт</button>
-                </div>
-                <div id="syncStatus" style="font-size:12px; color:#666; text-align:center; margin-top:8px;"></div>
+                <button id="applyListFilterBtn" style="margin-bottom: 0;">📋 Применить к списку</button>
             </div>
             <div style="overflow-x: auto;">
                 <table id="dataTable">
@@ -211,8 +213,6 @@
         </div>
     </div>
 </div>
-
-<input type="file" id="importFile" class="import-file" accept=".json">
 
 <!-- Модальное окно редактирования -->
 <div id="editModal" class="modal" style="display: none;">
@@ -237,7 +237,7 @@
 
 <script>
     // ⚠️ ⚠️ ⚠️ ЗАМЕНИТЕ ЭТУ СТРОКУ НА ВАШ АКТУАЛЬНЫЙ URL ИЗ APPS SCRIPT ⚠️ ⚠️ ⚠️
-    const API_URL ='https://script.google.com/macros/s/AKfycbwu3Vqvp52lCAot2Z37cTNwakpc8Xh31Xc88QpGNIp8GtBMI0XzsbLuzJcP0StNYRLXOw/exec'
+    const API_URL = 'https://script.google.com/macros/s/AKfycbwu3Vqvp52lCAot2Z37cTNwakpc8Xh31Xc88QpGNIp8GtBMI0XzsbLuzJcP0StNYRLXOw/exec'
 
     let records = [], editingId = null, isExpanded = true, syncInProgress = false;
     let currentFilter = { startDate: '', endDate: '', employee: '' };
@@ -406,31 +406,6 @@
         closeEdit();
     }
 
-    // Экспорт / импорт
-    function exportData(){
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([JSON.stringify(records,null,2)], {type:'application/json'}));
-        a.download = `backup_${new Date().toISOString().slice(0,19)}.json`;
-        a.click();
-        URL.revokeObjectURL(a.href);
-        alert('✅ Экспорт выполнен');
-    }
-    function importData(){ document.getElementById('importFile').click(); }
-    function handleImport(e){
-        const file = e.target.files[0];
-        if(!file) return;
-        const reader = new FileReader();
-        reader.onload = ev => {
-            try{
-                const imp = JSON.parse(ev.target.result);
-                if(Array.isArray(imp)){ records = imp; saveData(); updateFilters(); updateAll(); alert('✅ Импорт выполнен'); }
-                else alert('❌ Неверный формат');
-            }catch(err){ alert('❌ Ошибка импорта'); }
-        };
-        reader.readAsText(file);
-        e.target.value = '';
-    }
-
     // ☁️ Синхронизация с Google Sheets (только GET)
     async function syncWithCloud(){
         if(syncInProgress) return;
@@ -505,12 +480,9 @@
         setupAutocomplete('editEmployee','editAutocompleteList','editDuplicateWarning','editDate');
 
         document.getElementById('calculateBtn').addEventListener('click', applyReportFilters);
+        document.getElementById('syncBtn').addEventListener('click', syncWithCloud);
         document.getElementById('applyListFilterBtn').addEventListener('click', applyListFilters);
         document.getElementById('sortOrder').addEventListener('change', applyListFilters);
-        document.getElementById('syncBtn').addEventListener('click', syncWithCloud);
-        document.getElementById('exportBtn').addEventListener('click', exportData);
-        document.getElementById('importBtn').addEventListener('click', importData);
-        document.getElementById('importFile').addEventListener('change', handleImport);
         document.getElementById('addBtn').addEventListener('click', ()=>{
             const date = document.getElementById('newDate').value;
             const employee = document.getElementById('newEmployee').value;
