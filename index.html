@@ -407,28 +407,64 @@
     }
 
     // ☁️ Синхронизация с Google Sheets (только GET)
-    async function syncWithCloud(){
-        if(syncInProgress) return;
-        syncInProgress = true;
-        const btn = document.getElementById('syncBtn'), statusDiv = document.getElementById('syncStatus');
-        btn.classList.add('syncing');
-        statusDiv.innerText = '🔄 Синхронизация...';
-        try{
-            // 1. Загружаем данные из облака (GET)
-            const resp = await fetch(`${API_URL}?action=get`);
-            const json = await resp.json();
-            if(json.success && json.records){
-                const cloudMap = new Map();
-                json.records.forEach(r => cloudMap.set(r.id, r));
-                records.forEach(r => cloudMap.set(r.id, r));
-                records = Array.from(cloudMap.values());
-                saveData();
-                // 2. Отправляем локальные записи в облако (добавляем отсутствующие)
-                for(const rec of records){
-                    if(!json.records.find(cr => cr.id == rec.id)){
-                        await fetch(`${API_URL}?action=add&id=${rec.id}&date=${encodeURIComponent(rec.date)}&employee=${encodeURIComponent(rec.employee)}&hours=${rec.hours}`);
-                    }
+   async function syncWithCloud() {
+    if (syncInProgress) return;
+    syncInProgress = true;
+    const btn = document.getElementById('syncBtn');
+    const statusDiv = document.getElementById('syncStatus');
+    btn.classList.add('syncing');
+    statusDiv.innerText = '🔄 Синхронизация...';
+
+    try {
+        // 1. Загружаем текущие данные из Google Sheets
+        const resp = await fetch(`${API_URL}?action=get`);
+        const json = await resp.json();
+
+        if (json.success && json.records) {
+            // Сохраняем облачные записи в карту
+            const cloudMap = new Map();
+            json.records.forEach(r => cloudMap.set(r.id, r));
+
+            // Объединяем с локальными (локальные имеют приоритет)
+            const mergedMap = new Map();
+            records.forEach(r => mergedMap.set(r.id, r));
+            cloudMap.forEach((r, id) => {
+                if (!mergedMap.has(id)) mergedMap.set(id, r);
+            });
+            records = Array.from(mergedMap.values());
+            saveData();
+
+            // 2. Отправляем в облако те записи, которых там нет
+            let added = 0;
+            for (const rec of records) {
+                if (!cloudMap.has(rec.id)) {
+                    // Прямой GET-запрос с параметрами (без fetch модификаций)
+                    const addUrl = `${API_URL}?action=add&id=${rec.id}&date=${encodeURIComponent(rec.date)}&employee=${encodeURIComponent(rec.employee)}&hours=${rec.hours}`;
+                    const addResp = await fetch(addUrl);
+                    const addJson = await addResp.json();
+                    if (addJson.success) added++;
                 }
+            }
+
+            if (added > 0) {
+                statusDiv.innerText = `✅ Добавлено ${added} новых записей, синхронизация завершена ${new Date().toLocaleTimeString()}`;
+            } else {
+                statusDiv.innerText = `✅ Синхронизация завершена ${new Date().toLocaleTimeString()}`;
+            }
+
+            updateFilters();
+            updateAll();
+        } else {
+            statusDiv.innerText = '❌ Ошибка получения данных из таблицы';
+        }
+    } catch (err) {
+        console.error(err);
+        statusDiv.innerText = '❌ Ошибка синхронизации';
+    } finally {
+        syncInProgress = false;
+        btn.classList.remove('syncing');
+    }
+}
                 updateFilters();
                 updateAll();
                 statusDiv.innerText = `✅ Синхронизировано ${new Date().toLocaleTimeString()}`;
