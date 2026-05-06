@@ -2,35 +2,20 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <!-- Основная иконка для iPhone (добавление на экран "Домой") -->
-<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
-
-<!-- Иконки для разных устройств Apple -->
-<link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon.png">
-<link rel="apple-touch-icon" sizes="120x120" href="apple-touch-icon.png">
-<link rel="apple-touch-icon" sizes="167x167" href="apple-touch-icon.png">
-
-<!-- Иконки для браузера (вкладка) -->
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
-<link rel="icon"type="image/png" sizes="16x16" href="favicon-16x16.png">
-
-<!-- Иконки для Android/Chrome -->
-<link rel="icon" type="image/png" sizes="192x192" href="android-chrome-192x192.png">
-<link rel="icon" type="image/png" sizes="512x512" href="android-chrome-512x512.png">
-
-<!-- Название приложения (будет под иконкой) -->
-<meta name="apple-mobile-web-app-title" content="Учёт времени">
-<meta name="application-name" content="Учёт времени">
-
-<!-- Цвет фона при загрузке -->
-<meta name="theme-color" content="#34c759">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
-<!-- Режим приложения (без адресной строки) -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Учёт времени сотрудников</title>
+    <!-- Иконка для рабочего стола iPhone -->
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%2334c759'/%3E%3Ctext x='50' y='67' font-size='50' text-anchor='middle' fill='white' font-weight='bold'%3E📊%3C/text%3E%3C/svg%3E">
+    
+    <!-- Название приложения -->
+    <meta name="apple-mobile-web-app-title" content="Учёт">
+    <meta name="application-name" content="Учёт">
+    
+    <!-- Цвет фона и режим приложения -->
+    <meta name="theme-color" content="#34c759">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <style>
         * {
             box-sizing: border-box;
@@ -76,6 +61,7 @@
         .calc-button { background: #34c759; }
         .export-button { background: #34c759; }
         .import-button { background: #007aff; }
+        .settings-button { background: #5856d6; }
         .result-block {
             background: #eef2ff;
             border-radius: 20px;
@@ -149,12 +135,30 @@
         .sort-row { display: flex; justify-content: flex-end; margin-bottom: 12px; }
         .sort-select { width: auto; padding: 8px 12px; font-size: 14px; margin-bottom: 0; }
         .import-file { display: none; }
+        .current-rates {
+            font-size: 12px;
+            color: #666;
+            margin-top: 8px;
+            padding: 8px;
+            background: #f8f8f8;
+            border-radius: 12px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
 <div class="container">
     <div class="card">
-        <h1>📊 Учёт времени сотрудников</h1>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h1>📊 Учёт времени сотрудников</h1>
+            <button id="settingsBtn" class="settings-button" style="width: auto; padding: 8px 16px;">⚙️</button>
+        </div>
+        
+        <!-- Отображение текущих тарифов -->
+        <div class="current-rates" id="currentRatesDisplay">
+            📌 Текущие тарифы: 11ч = 372.7 ₽/ч | &lt;11ч = 400 ₽/ч
+        </div>
+        
         <h3>🔍 Отчёт</h3>
         <label>📅 Дата начала</label>
         <input type="date" id="startDate">
@@ -233,6 +237,22 @@
     </div>
 </div>
 
+<!-- Модальное окно настроек тарифов -->
+<div id="settingsModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h3>⚙️ Настройка тарифов</h3>
+        <p style="font-size: 12px; color: #666; margin-bottom: 16px;">⚠️ Новые тарифы будут применяться только к новым записям. Старые записи не изменятся.</p>
+        <label>💰 Ставка для 11 часов (₽/час)</label>
+        <input type="number" id="rate11" step="0.1" value="372.7">
+        <label>💰 Ставка для часов менее 11 (₽/час)</label>
+        <input type="number" id="rateLess" step="0.1" value="400">
+        <div class="modal-buttons">
+            <button id="saveSettingsBtn">💾 Сохранить</button>
+            <button id="cancelSettingsBtn" style="background:#8e8e93;">❌ Отмена</button>
+        </div>
+    </div>
+</div>
+
 <div id="editModal" class="modal" style="display: none;">
     <div class="modal-content">
         <h3>✏️ Редактировать запись</h3>
@@ -249,14 +269,95 @@
 
 <script>
     // ============================================================
-    // БАЗА ДАННЫХ (локальное хранилище)
+    // БАЗА ДАННЫХ
     // ============================================================
     let records = [];
     let editingId = null;
     let isExpanded = true;
     
+    // Тарифы для НОВЫХ записей
+    let rates = {
+        rate11: 372.7,
+        rateLess: 400
+    };
+    
     let currentFilter = { startDate: '', endDate: '', employee: '' };
     let listFilter = { year: '', month: '', employee: '', sortOrder: 'desc' };
+
+    // ============================================================
+    // ФУНКЦИИ ДЛЯ РАБОТЫ С ТАРИФАМИ
+    // ============================================================
+    
+    function loadRates() {
+        const savedRates = localStorage.getItem('workRates');
+        if (savedRates) {
+            const parsed = JSON.parse(savedRates);
+            rates.rate11 = parsed.rate11 !== undefined ? parsed.rate11 : 372.7;
+            rates.rateLess = parsed.rateLess !== undefined ? parsed.rateLess : 400;
+        }
+        // Обновляем отображение
+        document.getElementById('rate11').value = rates.rate11;
+        document.getElementById('rateLess').value = rates.rateLess;
+        updateRatesDisplay();
+    }
+    
+    function saveRates() {
+        localStorage.setItem('workRates', JSON.stringify(rates));
+        updateRatesDisplay();
+    }
+    
+    // Обновление отображения текущих тарифов
+    function updateRatesDisplay() {
+        const display = document.getElementById('currentRatesDisplay');
+        if (display) {
+            display.innerHTML = `📌 Текущие тарифы: 11ч = ${rates.rate11} ₽/ч | &lt;11ч = ${rates.rateLess} ₽/ч`;
+        }
+    }
+    
+    // Расчёт выплаты для НОВОЙ записи (по текущим тарифам)
+    function calculatePaymentForNewRecord(hours) {
+        if (hours === 11) return hours * rates.rate11;
+        if (hours < 11) return hours * rates.rateLess;
+        return hours * rates.rateLess;
+    }
+    
+    // При редактировании записи пересчитываем по текущим тарифам
+    function calculatePaymentForEdit(hours) {
+        if (hours === 11) return hours * rates.rate11;
+        if (hours < 11) return hours * rates.rateLess;
+        return hours * rates.rateLess;
+    }
+    
+    function openSettingsModal() {
+        document.getElementById('rate11').value = rates.rate11;
+        document.getElementById('rateLess').value = rates.rateLess;
+        document.getElementById('settingsModal').style.display = 'flex';
+    }
+    
+    function closeSettingsModal() {
+        document.getElementById('settingsModal').style.display = 'none';
+    }
+    
+    function saveSettings() {
+        const newRate11 = parseFloat(document.getElementById('rate11').value);
+        const newRateLess = parseFloat(document.getElementById('rateLess').value);
+        
+        if (isNaN(newRate11) || newRate11 <= 0) {
+            alert('Введите корректную ставку для 11 часов');
+            return;
+        }
+        if (isNaN(newRateLess) || newRateLess <= 0) {
+            alert('Введите корректную ставку для часов менее 11');
+            return;
+        }
+        
+        rates.rate11 = newRate11;
+        rates.rateLess = newRateLess;
+        saveRates();
+        
+        closeSettingsModal();
+        alert('✅ Тарифы сохранены. Новые записи будут рассчитываться по новым ставкам. Старые записи не изменились.');
+    }
 
     // ============================================================
     // ФУНКЦИИ ДЛЯ РАБОТЫ С ДАТАМИ
@@ -290,7 +391,6 @@
         return dateStr;
     }
 
-    const calcPayment = (h) => (h === 11 ? h * 372.7 : h * 400);
     const generateId = () => Date.now();
     const saveData = () => localStorage.setItem('workRecords', JSON.stringify(records));
     const loadData = () => { 
@@ -405,7 +505,7 @@
     }
 
     // ============================================================
-    // CRUD
+    // CRUD (с использованием calculatePaymentForNewRecord)
     // ============================================================
     function addRecord(date, emp, h) {
         if (!date || !emp || !h) { alert('Заполните все поля'); return false; }
@@ -413,7 +513,7 @@
         if (isDuplicate(normalizedDate, emp, null)) { alert('❌ Сотрудник уже добавлен на эту дату'); return false; }
         h = parseFloat(h);
         if (isNaN(h) || h <= 0) { alert('Введите корректное количество часов'); return false; }
-        const newRec = { id: generateId(), date: normalizedDate, employee: emp.trim(), hours: h, payment: calcPayment(h) };
+        const newRec = { id: generateId(), date: normalizedDate, employee: emp.trim(), hours: h, payment: calculatePaymentForNewRecord(h) };
         records.push(newRec);
         saveData();
         updateFilters();
@@ -445,7 +545,8 @@
         if (isDuplicate(normalizedDate, employee, editingId)) { alert('❌ Сотрудник уже добавлен на эту дату'); return; }
         const idx = records.findIndex(r => r.id === editingId);
         if (idx !== -1) {
-            records[idx] = { ...records[idx], date: normalizedDate, employee: employee.trim(), hours, payment: calcPayment(hours) };
+            // При редактировании пересчитываем сумму по текущим тарифам
+            records[idx] = { ...records[idx], date: normalizedDate, employee: employee.trim(), hours, payment: calculatePaymentForEdit(hours) };
             saveData();
             updateFilters();
             updateAll();
@@ -454,7 +555,7 @@
     }
 
     // ============================================================
-    // ЭКСПОРТ В ФАЙЛ
+    // ЭКСПОРТ / ИМПОРТ
     // ============================================================
     function exportToFile() {
         if (records.length === 0) {
@@ -472,9 +573,6 @@
         alert('✅ Данные экспортированы');
     }
     
-    // ============================================================
-    // ИМПОРТ ИЗ ФАЙЛА
-    // ============================================================
     function importFromFile() {
         document.getElementById('importFile').click();
     }
@@ -535,6 +633,7 @@
     // ИНИЦИАЛИЗАЦИЯ
     // ============================================================
     function init() {
+        loadRates();
         loadData();
         updateFilters();
         updateAll();
@@ -548,6 +647,9 @@
         document.getElementById('applyListFilterBtn').addEventListener('click', applyListFilters);
         document.getElementById('sortOrder').addEventListener('change', applyListFilters);
         document.querySelector('.sort-header')?.addEventListener('click', toggleSort);
+        document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
+        document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+        document.getElementById('cancelSettingsBtn').addEventListener('click', closeSettingsModal);
         
         document.getElementById('addBtn').addEventListener('click', () => {
             const d = document.getElementById('newDate').value, e = document.getElementById('newEmployee').value, h = document.getElementById('newHours').value;
